@@ -1,7 +1,7 @@
 {
   "name": "dsh-api-balance",
-  "version": "1.0.0",
-  "description": "Read-only DeepSeek API account balance for the DeepSeek Harness web GUI. The API key never leaves the host process.",
+  "version": "1.1.0",
+  "description": "DeepSeek API account balance and per-run usage cost for the DeepSeek Harness web GUI. The API key never leaves the host process.",
   "keywords": [
     "dsh",
     "dsh-plugin",
@@ -26,8 +26,7 @@
     "./package.json": "./package.json"
   },
   "files": [
-    "lib/index.js",
-    "lib/client.js",
+    "lib/*.js",
     "lib/types",
     "cordis.patch.yml",
     "README.md",
