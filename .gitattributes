@@ -1,0 +1,11 @@
+# Normalize line endings in the repository. Shipped JavaScript and shell input
+# must stay LF regardless of the contributor's platform.
+* text=auto eol=lf
+
+# Binary artifacts are never normalized.
+*.png binary
+*.jpg binary
+*.gif binary
+*.ico binary
+*.woff binary
+*.woff2 binary
