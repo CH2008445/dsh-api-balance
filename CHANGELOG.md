@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-10-01
+
+### Added
+
+- Per-run usage cost, billed from the usage chunk the harness emits for every
+  model call, so the figure reflects the requests actually made including
+  retries.
+- Official CNY price table with peak and off-peak tiers for `deepseek-flash` and
+  `deepseek-v4-pro`.
+- Peak-hour classification in Beijing time: Monday to Friday 09:00-12:00 and
+  14:00-18:00, with weekends and configured holidays treated as off-peak.
+- `holidays` config field for the Chinese public holiday calendar, which cannot
+  be derived in advance.
+- `prices` config field to override or extend the price table when DeepSeek
+  changes its rates.
+- `persistUsage` config field. Usage totals persist to
+  `$DSH_HOME/storages/api-balance/usage.json` and are keyed by process start, so
+  a plugin reload keeps the running figure while a new launch starts from zero.
+- `lib/pricing.js` and `lib/usage-ledger.js`, kept separate from the plugin
+  entry so the arithmetic and persistence are testable in isolation.
+- Sidebar footer now shows balance and run cost on one line, with the tooltip
+  breaking the cost down into calls and token buckets.
+
+### Changed
+
+- Retired model names bill as the model that serves them: `deepseek-v4-flash` and
+  `deepseek-v4-flash-vision-exp` bill at `deepseek-flash` rates.
+- Cache writes bill at the cache-hit rate, matching official historical pricing.
+- Unknown model ids cost zero rather than guessing a price.
+- The balance cache no longer hides cost: usage accompanies a failed balance read,
+  because the cost of the run needs no network.
+
+### Fixed
+
+- Usage ledger now persists its session set, which was previously kept in memory
+  only and lost on reload.
+
 ## [1.0.0] - 2026-10-01
 
 ### Added
@@ -39,5 +76,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `@deepseek-ai/schemastery` is loaded optionally, so the plugin also loads
   outside a DSH install and the release checks run standalone.
 
-[Unreleased]: https://github.com/CH2008445/dsh-api-balance/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/CH2008445/dsh-api-balance/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/CH2008445/dsh-api-balance/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/CH2008445/dsh-api-balance/releases/tag/v1.0.0
