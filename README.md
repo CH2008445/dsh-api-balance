@@ -34,9 +34,12 @@ cannot creep back in.
 - Returns the balance fields plus token and cost totals, and renders one
   clickable line in `sidebar.footer.action`
 
-The line reads `¥9.97  ·  run ¥0.12`: the account balance, then the cost
-accumulated since this process started. Hovering breaks the cost down into calls
-and token buckets; clicking forces a refresh.
+The line reads `Balance ¥6.39  ·  Cost ¥0.12`: the account balance and the cost
+accumulated since this process started, each labelled so neither figure is
+ambiguous. Both are always present — an unknown value keeps its `--` placeholder
+instead of disappearing, so the row does not shift once the first call is billed.
+Hovering breaks the cost down into calls and token buckets; clicking forces a
+refresh.
 
 ## Cost accounting
 
@@ -127,12 +130,35 @@ profile directory:
 
 Restart DSH. The row then appears at the bottom of the left sidebar.
 
-> Tip: if `pnpm install` reports "Already up to date" without materializing the
-> package (a stale lockfile importer can cause this), point the profile's
-> `node_modules/dsh-api-balance` at your checkout with a directory junction —
-> `mklink /J` on Windows — so the profile always reads your working copy.
+### If the package does not materialize
+
+`pnpm` can report `Already up to date` and still leave
+`node_modules/dsh-api-balance` missing, when a stale lockfile importer records
+the dependency as satisfied. Confirm what actually landed:
+
+```sh
+ls "$DSH_HOME/profiles/<profile>/node_modules/dsh-api-balance/lib"
+```
+
+If `lib/` is absent, link the profile entry at your checkout so the profile reads
+it directly. On Windows:
+
+```bat
+mklink /J "%USERPROFILE%\.dsh\profiles\desktop\node_modules\dsh-api-balance" "C:\path\to\dsh-api-balance"
+```
+
+On macOS or Linux:
+
+```sh
+ln -s /path/to/dsh-api-balance "$HOME/.dsh/profiles/desktop/node_modules/dsh-api-balance"
+```
+
+A link has a second benefit for development: edits to the checkout take effect
+without reinstalling. It also means `pnpm install` in that profile may replace
+the link, so re-create it if the package disappears again.
 
 ### Verify the installation
+
 
 Open the browser console in the GUI and run:
 
@@ -144,6 +170,50 @@ An `{ ok: true, currency: "CNY", totalBalance: "...", usage: { total: { cost: ..
 object means the host half is live. A `404` means the loader row did not
 activate; a `403` means the request reached the route without the required
 header or from another origin.
+
+## Troubleshooting
+
+### The row renders but says `Balance unavailable`
+
+Hover the row, or run the console snippet above, to read the reason. `HTTP 404`
+means the host half never registered its route, which is an activation fault and
+not a credential problem; check the activation log described below.
+
+### Checking plugin activation
+
+The plugin appends its activation steps to `dsh-api-balance/plugin.log` inside
+the per-user temporary directory (`%TEMP%` on Windows, `$TMPDIR` elsewhere). Set
+`DSH_BALANCE_DIAG=<dir>` to redirect it. A healthy activation records four lines:
+
+```
+module evaluated (exports: name=api-balance, apply=function)
+apply() entered; config={}
+inject callback fired
+webServer resolved: function
+```
+
+That log exists because activation failure is otherwise invisible: the plugin
+still renders its row while contributing nothing, and no framework log records
+the fault. What the log tells you:
+
+| Log contents | Meaning |
+|---|---|
+| File absent | The loader never imported the module: the bundle row did not resolve |
+| `module evaluated` only | The module loaded but the framework refused it. Check the `Config` export first: Cordis requires a present `Config` to implement Standard Schema (`Config["~standard"].validate`) and aborts activation when it does not |
+| `apply() entered` without `inject callback fired` | A declared dependency never became available, so the route was never registered |
+| All four lines | Activation is healthy; the fault is in the request or the credential |
+
+The log holds service names, resolution outcomes, and status codes only. It never
+contains the API key.
+
+### The `Config` export trap
+
+This plugin exports `Config` only when `@deepseek-ai/schemastery` resolves **and**
+its product implements Standard Schema. Exporting a schema that cannot validate
+is worse than exporting none: Cordis calls `Config["~standard"].validate(config)`
+before `apply`, and that throw removes every contribution the plugin makes while
+leaving the UI intact. A plugin that renders but does nothing is almost always
+this fault.
 
 ## Configuration
 
