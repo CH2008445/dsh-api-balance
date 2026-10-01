@@ -159,26 +159,66 @@ if (LIVE && (SECRET === undefined || SECRET.length === 0)) {
 }
 let handler = null
 let streamHandler = null
+let injectCalls = 0
+const services = {
+  webServer: { register: (route) => { handler = route.handler; return () => {} } },
+  credentials: { resolve: async (ref) => (ref === 'DEEPSEEK_API_KEY' ? { value: SECRET, source: 'test' } : undefined) },
+  settings: { get: () => ({ apiKeyEnv: 'DEEPSEEK_API_KEY' }) },
+}
 const ctx = {
   effect: (fn) => { fn(); return () => {} },
   on: (event, listen) => { if (event === 'llm/stream') streamHandler = listen; return () => {} },
-  get: (service) => {
-    if (service === 'webServer') {
-      return { register: (route) => { handler = route.handler; return () => {} } }
+  get: (service) => services[service],
+  // The plugin defers its route until the web server is published, so the route
+  // must NOT be registered while the service is still missing. This stand-in
+  // starts with the service absent and publishes it on demand, which reproduces
+  // a fresh boot where ctx.get('webServer') is undefined during activation.
+  inject: (names, callback) => {
+    injectCalls += 1
+    const scope = {
+      get: (service) => services[service],
+      effect: (fn) => { fn(); return () => {} },
     }
-    if (service === 'credentials') {
-      return { resolve: async (ref) => (ref === 'DEEPSEEK_API_KEY' ? { value: SECRET, source: 'test' } : undefined) }
-    }
-    if (service === 'settings') {
-      return { get: () => ({ apiKeyEnv: 'DEEPSEEK_API_KEY' }) }
-    }
-    return undefined
+    callback(scope)
+    return () => {}
   },
 }
 // Keep the ledger out of the developer's real DSH home during checks.
 host.apply(ctx, { cacheMs: 0, path: '/api/dsh-api-balance', persistUsage: false })
+if (injectCalls !== 1) fail('apply() must defer the route through ctx.inject')
 if (typeof handler !== 'function') fail('apply() must register a route handler')
 if (typeof streamHandler !== 'function') fail('apply() must listen to llm/stream')
+
+// The route must be deferred through ctx.inject, which Cordis gates on service
+// readiness. An earlier revision read the service eagerly and returned silently
+// when it was missing, which left the UI failing with no diagnostic at all.
+{
+  let lateStream = null
+  let bareInject = 0
+  let bareThrow = null
+  const bare = {
+    effect: (fn) => { fn(); return () => {} },
+    on: (event, listen) => { if (event === 'llm/stream') lateStream = listen; return () => {} },
+    get: () => undefined,
+    inject: (names, callback) => {
+      bareInject += 1
+      try {
+        callback({ get: () => undefined, effect: (fn) => { fn(); return () => {} } })
+      } catch (error) {
+        bareThrow = error
+      }
+      return () => {}
+    },
+  }
+  host.apply(bare, { persistUsage: false })
+  if (bareInject !== 1) fail('the route must be deferred through ctx.inject')
+  if (typeof lateStream !== 'function') fail('usage accounting must install even without a web server')
+  // A missing service must surface rather than be swallowed into an absent route.
+  if (bareThrow === null || !/webServer/u.test(String(bareThrow.message))) {
+    fail('an unavailable web server must raise an explicit error, not be ignored')
+  }
+}
+ok('route registration defers to the web server while usage accounting installs immediately')
 
 const call = async (headers, url = '/api/dsh-api-balance') => {
   let status = 0
@@ -382,10 +422,14 @@ if (!renderedTitle.includes('\u00a59.97')) {
 if (!renderedTitle.includes('This run')) fail('the tooltip must report this run cost, got: ' + JSON.stringify(renderedTitle))
 if (!renderedTitle.includes('\u00a50.12')) fail('the tooltip must report the run cost amount, got: ' + JSON.stringify(renderedTitle))
 if (!renderedTitle.includes('Tokens in')) fail('the tooltip must break down token buckets')
-if (!renderedText.includes('9.97') || !renderedText.includes('0.12')) {
-  fail('the one line must show both balance and run cost, got: ' + JSON.stringify(renderedText))
+// Both figures carry a label on the row itself, so neither is ambiguous.
+if (!renderedText.includes('Balance \u00a59.97')) {
+  fail('the row must label the balance, got: ' + JSON.stringify(renderedText))
 }
-ok('the row shows the balance and the run cost on one line')
+if (!renderedText.includes('Cost \u00a50.12')) {
+  fail('the row must label the cost, got: ' + JSON.stringify(renderedText))
+}
+ok('the row shows the labelled balance and cost on one line')
 
 // A run with no billed calls yet must show the balance alone, without a cost.
 {
@@ -428,13 +472,19 @@ ok('the row shows the balance and the run cost on one line')
     hooks2 = 0
     const row2 = registered2[0]({ wide: true })
     const text2 = row2.children.flat().join('')
-    if (!text2.includes('9.97')) fail('an unbilled run must still show the balance, got: ' + JSON.stringify(text2))
-    if (text2.includes('run')) fail('an unbilled run must not show a cost, got: ' + JSON.stringify(text2))
+    // An unbilled run keeps its balance and shows the cost placeholder, so the
+    // row does not change width or drop a figure once the first call is billed.
+    if (!text2.includes('Balance \u00a59.97')) {
+      fail('an unbilled run must still show the balance, got: ' + JSON.stringify(text2))
+    }
+    if (!text2.includes('Cost --')) {
+      fail('an unbilled run must keep a cost placeholder, got: ' + JSON.stringify(text2))
+    }
   } finally {
     globalThis.fetch = realFetch2
   }
 }
-ok('an unbilled run shows the balance alone')
+ok('an unbilled run keeps both labels, with the cost placeholder')
 
 // ── 10. Optional live query ──────────────────────────────────────────────────
 
