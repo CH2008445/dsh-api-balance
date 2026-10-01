@@ -17,6 +17,7 @@ Thumbs.db
 # Local scratch
 tmp/
 scratch/
+.diag/
 *.local
 .env
 .env.*
