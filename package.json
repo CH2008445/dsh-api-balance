@@ -1,6 +1,6 @@
 {
   "name": "dsh-api-balance",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "DeepSeek API account balance and per-run usage cost for the DeepSeek Harness web GUI. The API key never leaves the host process.",
   "keywords": [
     "dsh",
