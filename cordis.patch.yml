@@ -1,0 +1,8 @@
+# dsh-api-balance bundle patch.
+#
+# Applied when a DSH profile lists this package in its `dsh.profile.bundles`.
+# The row resolves by package name, so the package must be installed into the
+# profile (the name is resolved from the profile's own node_modules).
+- insert:
+    - id: api-balance
+      name: dsh-api-balance
