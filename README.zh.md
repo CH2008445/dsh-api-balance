@@ -1,8 +1,8 @@
 # dsh-api-balance
 
-只读显示 **DeepSeek API 账户余额** 的 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) Web GUI 插件。余额显示在侧边栏底部，并自动刷新。
+显示 **DeepSeek API 账户余额与本次运行费用** 的 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) Web GUI 插件。侧边栏底部一行同时给出余额和本次启动至今的花费。
 
-它只为了一件事而写：**在显示余额的同时，不扩大 API Key 的暴露面**。整个插件就是两个小文件，几分钟就能读完。
+它只为了一件事而写：**在显示花费的同时，不扩大 API Key 的暴露面**。整个插件就是四个小文件，几分钟就能读完。
 
 [English](README.md) | 中文
 
@@ -25,8 +25,32 @@ DSH 插件与你的 API Key 运行在**同一个进程**里，插件与凭据存
 
 - 在宿主侧通过 DSH 凭据存储解析 `DEEPSEEK_API_KEY`
 - 用进程内 `fetch` 请求 `GET https://api.deepseek.com/user/balance`
-- 只向界面返回四个字段：`currency`、`total_balance`、`granted_balance`、`topped_up_balance`
-- 在 `sidebar.footer.action` 渲染一行可点击的余额
+- 按官方人民币价（含峰谷档）为**每一次模型调用**计费，数据来自 harness 的用量块
+- 返回余额字段与 token／费用汇总，并在 `sidebar.footer.action` 渲染一行可点击的显示
+
+这一行读作 `¥9.97  ·  本次 ¥0.12`：先是账户余额，再是本次进程启动至今的费用。悬停可展开调用次数与 token 明细，点击强制刷新。
+
+## 费用计算
+
+费用来自 harness 为每次模型调用发出的用量块，因此反映的是**真实发出的请求**（含重试）。统计口径为**当前进程这一次运行**，并会持久化——重载插件不会丢数，重新启动则从零开始。
+
+价格取自[官方定价页](https://api-docs.deepseek.com/quick_start/pricing)，单位人民币元 / 百万 tokens：
+
+| 模型 | 档位 | 缓存命中 | 缓存未命中 | 输出 |
+|---|---|---|---|---|
+| `deepseek-flash` | 空闲 | 0.02 | 1 | 4 |
+| `deepseek-flash` | 高峰 | 0.04 | 2 | 8 |
+| `deepseek-v4-pro` | 空闲 | 0.15 | 4.5 | 13.5 |
+| `deepseek-v4-pro` | 高峰 | 0.30 | 9.0 | 27.0 |
+
+应用的计费规则：
+
+- **高峰时段**为北京时间（UTC+8）周一至周五 09:00–12:00 与 14:00–18:00；其余时段（含周末）均为空闲
+- **缓存写入按缓存命中价计费**，沿用官方历史规则
+- **下线的模型名按其实际服务模型计费**：`deepseek-v4-flash` 与 `deepseek-v4-flash-vision-exp` 按 `deepseek-flash` 计价
+- **未知模型计 0 费用**，而不是猜一个价格
+
+有两件事无法自动推导，需要部署时提供：**中国法定节假日**（会让工作日变为空闲档）以及价格变动。两者都是配置项，见下文。
 
 ## 安全设计
 
@@ -34,19 +58,19 @@ DSH 插件与你的 API Key 运行在**同一个进程**里，插件与凭据存
 |---|---|
 | 密钥不离开宿主进程 | 只用 `ctx.credentials.resolve()` 读取；不进响应体、不进日志、不进浏览器 |
 | 密钥不进命令行 | 只用进程内 `fetch`，无子进程、无 shell。发布校验会断言 |
-| 不绕过沙箱 | 插件完全不触碰沙箱策略。发布校验会断言 |
+| 不绕过沙箱 | 插件完全不读写沙箱策略。发布校验会断言 |
 | 密钥只发往 DeepSeek | 端点 host 必须等于 `api.deepseek.com`，否则拒绝发送密钥。**该行为不可配置** |
 | 端点不可被跨站读取 | 要求 `x-dsh-balance: 1` 自定义头（会强制 CORS 预检），并校验 `Origin` 为本机回环 |
 | 失败不泄露任何信息 | 网络、解析、HTTP 错误一律返回固定文案，绝不回传底层错误 |
-| 不放大请求 | 成功的结果缓存 60 秒；失败结果永不缓存 |
+| 不放大请求 | 余额查询成功才缓存；失败结果永不缓存 |
 
-端点和凭据处理属于**安全不变量，刻意不开放为配置项**。可调的只有 `cacheMs` 和 `path`。
+端点和凭据处理属于**安全不变量，刻意不开放为配置项**。可调的只有「配置」一节列出的字段。
 
 ## 环境要求
 
 - 带 Web 客户端的 DeepSeek Harness（`dsh-web-app` 组合包生效）
 - 已配置 `DEEPSEEK_API_KEY` 凭据（设置 → 模型），或导出了同名环境变量
-- 使用 `deepseek-official` 提供方路由。**余额接口仅支持官方端点**：若你的 `baseURL` 指向中转站或镜像，插件会拒绝发送密钥，而不是把它泄露出去。
+- 使用 `deepseek-official` 提供方路由。**余额接口仅支持官方端点**：若你的 `baseURL` 指向中转站或镜像，插件会拒绝发送密钥，而不是把它泄露出去。费用统计不受影响，因为它不需要网络。
 
 ## 安装
 
@@ -79,9 +103,9 @@ dsh plugin --profile desktop add /path/to/dsh-api-balance
 }
 ```
 
-重启 DSH 后，左侧边栏底部会出现余额行。
+重启 DSH 后，左侧边栏底部会出现该行。
 
-> 提示：若 `pnpm install` 报告 "Already up to date" 却没有把包落盘（锁文件 importer 陈旧会导致这种情况），可用目录链接把 profile 的 `node_modules/dsh-api-balance` 指向你的工作目录——Windows 下用 `mklink /J`——这样 profile 始终读取你的工作副本。
+> 提示：若 `pnpm install` 报告 "Already up to date" 却没有把包落盘（锁文件 importer 陈旧会导致这种情况），可用目录链接把 profile 的 `node_modules/dsh-api-balance` 指向你的工作目录——Windows 下用 `mklink /J`。
 
 ### 验证安装
 
@@ -91,8 +115,7 @@ dsh plugin --profile desktop add /path/to/dsh-api-balance
 fetch('/api/dsh-api-balance', { headers: { 'x-dsh-balance': '1' } }).then(r => r.json()).then(console.log)
 ```
 
-返回 `{ ok: true, currency: "CNY", totalBalance: "...", ... }` 说明宿主侧已工作。
-返回 `404` 说明 Loader 行未激活；返回 `403` 说明请求缺少必需的头或来自其他来源。
+返回带 `usage.total.cost` 的对象说明宿主侧已工作。返回 `404` 说明 Loader 行未激活；返回 `403` 说明请求缺少必需的头或来自其他来源。
 
 ## 配置
 
@@ -104,23 +127,41 @@ fetch('/api/dsh-api-balance', { headers: { 'x-dsh-balance': '1' } }).then(r => r
   config:
     cacheMs: 60000
     path: /api/dsh-api-balance
+    persistUsage: true
+    holidays:
+      - '2026-10-01'
+      - '2026-10-02'
+    prices:
+      deepseek-flash:
+        cacheHit: 0.02
+        cacheMiss: 1
+        output: 4
+        peak:
+          cacheHit: 0.04
+          cacheMiss: 2
+          output: 8
 ```
 
-| 字段 | 默认值 | 取值范围 | 含义 |
-|---|---|---|---|
-| `cacheMs` | `60000` | 0 – 3600000 | 余额结果缓存时长（毫秒） |
-| `path` | `/api/dsh-api-balance` | — | 提供余额 JSON 的精确 HTTP 路由 |
+| 字段 | 默认值 | 含义 |
+|---|---|---|
+| `cacheMs` | `60000` | 余额结果缓存时长（毫秒，0 – 3600000） |
+| `path` | `/api/dsh-api-balance` | 提供数据的精确 HTTP 路由 |
+| `persistUsage` | `true` | 持久化用量汇总，使插件重载后不丢本次费用 |
+| `holidays` | `[]` | 按空闲档计费的北京日期（`YYYY-MM-DD`） |
+| `prices` | 内置价表 | 覆盖或扩展价格表，单位人民币元 / 百万 tokens |
+
+用量数据存放在 `$DSH_HOME/storages/api-balance/usage.json`。
 
 ## 开发
 
-没有构建步骤：`lib/index.js` 与 `lib/client.js` 就是交付产物。`lib/client.js` 是手写的 DSH `window.__ModuleLoader__` 格式 bundle，`lib/types/index.d.ts` 提供公开类型。
+没有构建步骤：`lib/` 下的文件就是交付产物。`lib/client.js` 是手写的 DSH `window.__ModuleLoader__` 格式 bundle，`lib/types/index.d.ts` 提供公开类型。
 
 ```sh
 node scripts/verify.mjs           # 离线校验,不需要凭据
 BALANCE_TEST_KEY=sk-... node scripts/verify.mjs --live   # 额外做一次真实查询
 ```
 
-`scripts/verify.mjs` 会断言清单契约、Loader patch、宿主导出面、上述安全不变量、路由的拒绝行为，以及客户端 bundle 契约。它不需要安装 DSH；除 `--live` 外也不需要网络。
+`scripts/verify.mjs` 会断言清单契约、Loader patch、宿主导出面、上述安全不变量、计价与峰谷时段、账本持久化、路由拒绝行为、用量采集，以及客户端 bundle 契约。它不需要安装 DSH；除 `--live` 外也不需要网络。
 
 **客户端 bundle id 规则。** 传给 `window.__ModuleLoader__.load` 的模块 id **必须等于包名**。id 不一致会让浏览器模块系统拒绝该 factory，并以 `duplicate factory registration` 使整条 web boot entry 失败，进而导致应用无法启动。`scripts/verify.mjs` 对此有专门断言——请保留它。
 
@@ -130,10 +171,12 @@ BALANCE_TEST_KEY=sk-... node scripts/verify.mjs --live   # 额外做一次真实
 
 ## 已知限制
 
-- 仅支持官方端点；网关与镜像的 `baseURL` 会被按设计拒绝
+- 余额接口仅支持官方端点；网关与镜像的 `baseURL` 会被按设计拒绝
+- 费用只覆盖当前这次进程运行，不含更早历史
+- 中国法定节假日只有写进 `holidays` 才按空闲档计费；官方日历无法提前得知
+- 价格内置，DeepSeek 调价后需要更新
 - 只显示 `balance_infos` 的第一项
-- 侧边栏折叠时只显示金额、不显示标签
-- 结果按 `cacheMs` 缓存；点击余额行可强制刷新
+- 侧边栏折叠时显示精简标签
 
 ## 许可证
 
