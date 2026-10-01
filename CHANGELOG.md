@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-10-01
+
+### Added
+
+- The sidebar row shows both figures at once, each labelled: `Balance ¥6.39  ·  Cost ¥0.12`. An unknown value keeps its placeholder rather than disappearing, so the row does not shift once the first call is billed.
+- Activation log under the per-user temporary directory (`dsh-api-balance/plugin.log`, redirected by `DSH_BALANCE_DIAG`). It records the activation steps and resolution outcomes, never the key, and exists because a plugin whose `apply` never runs is otherwise invisible: it still renders its UI while contributing nothing.
+
+### Fixed
+
+- **Activation aborted when `@deepseek-ai/schemastery` could not be resolved.** A stand-in schema was exported as `Config`, and Cordis validates a present `Config` through the Standard Schema interface (`Config["~standard"].validate`), so the stand-in threw before `apply` ran. The plugin then loaded, rendered its row, and registered no host route: every request answered `404`, and nothing reached any log. `Config` is now exported only when the real schema resolves and its product implements Standard Schema; otherwise it is omitted and Cordis passes the raw config. This is a regression introduced in 1.1.0, where `apply` was the module's only export.
+- The activation log no longer writes inside the package directory, so an installed copy never dirties `node_modules`.
+
 ## [1.1.0] - 2026-10-01
 
 ### Added
@@ -76,6 +88,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `@deepseek-ai/schemastery` is loaded optionally, so the plugin also loads
   outside a DSH install and the release checks run standalone.
 
-[Unreleased]: https://github.com/CH2008445/dsh-api-balance/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/CH2008445/dsh-api-balance/compare/v1.1.1...HEAD
+[1.1.1]: https://github.com/CH2008445/dsh-api-balance/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/CH2008445/dsh-api-balance/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/CH2008445/dsh-api-balance/releases/tag/v1.0.0
