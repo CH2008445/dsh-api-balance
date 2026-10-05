@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-10-01
+
+### Changed
+
+- **The price table now leads the tooltip**, ahead of the balance and the cost: the rates are what the cost below them is derived from, so they are read first. The order is asserted by offset in the release checks.
+
+### Fixed
+
+- Price formatting no longer drops trailing zeros or leaks floating-point noise. `0.30` printed as `0.3`, `4` as `4`, and an accumulated value such as `2.0000000000000004` printed in full. Rates below one now keep four decimals and rates at or above one keep two, so distinct sub-cent rates such as `0.02` and `0.0028` cannot collapse onto the same string.
+
 ## [1.2.0] - 2026-10-01
 
 ### Added
@@ -100,7 +110,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `@deepseek-ai/schemastery` is loaded optionally, so the plugin also loads
   outside a DSH install and the release checks run standalone.
 
-[Unreleased]: https://github.com/CH2008445/dsh-api-balance/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/CH2008445/dsh-api-balance/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/CH2008445/dsh-api-balance/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/CH2008445/dsh-api-balance/compare/v1.1.1...v1.2.0
 [1.1.1]: https://github.com/CH2008445/dsh-api-balance/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/CH2008445/dsh-api-balance/compare/v1.0.0...v1.1.0
