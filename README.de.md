@@ -28,7 +28,9 @@ Dieses Plugin tut nichts davon, und die Release-Prüfungen stellen sicher, dass 
 - Berechnet die Kosten jedes Modellaufrufs aus dem Usage-Block, den das Harness zu jeder Anfrage liefert, nach den offiziellen Yuan-Preisen mit Haupt- und Nebenzeit-Tarif
 - Liefert Guthaben, Token-Summen, Kosten und die Preistabelle und zeichnet eine Zeile in `sidebar.footer.action`
 
-Die Zeile lautet `Balance ¥6.39  ·  Cost ¥0.12`: Guthaben und Kosten seit dem Start dieses Prozesses, jeder Wert beschriftet. Beide sind immer vorhanden — ein unbekannter Wert behält seinen Platzhalter `--`, statt zu verschwinden, damit die Zeile nach dem ersten kostenpflichtigen Aufruf nicht springt. Beim Überfahren öffnet sich die Aufschlüsselung der Kosten und die **Preistabelle je 1 Mio. Token** für beide Tarife mit Markierung des gerade geltenden; ein Klick aktualisiert.
+Die Zeile lautet `Balance ¥6.39  ·  Cost ¥0.12`: Guthaben und Kosten seit dem Start dieses Prozesses, jeder Wert beschriftet. Beide sind immer vorhanden — ein unbekannter Wert behält seinen Platzhalter `--`, statt zu verschwinden, damit die Zeile nach dem ersten kostenpflichtigen Aufruf nicht springt.
+
+Beim Überfahren öffnet sich ein Tooltip, der **mit der Preistabelle beginnt**: die Rate jedes Modells je 1 Mio. Token für beide Tarife, mit Markierung des gerade geltenden, gefolgt von Guthaben, Kosten des Laufs und Token-Aufschlüsselung. Die Preise stehen zuerst, damit man die Raten sieht, aus denen die Kosten stammen. Ein Klick aktualisiert.
 
 ## Kostenrechnung
 
