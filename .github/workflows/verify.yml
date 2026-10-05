@@ -1,0 +1,42 @@
+name: verify
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: verify on node ${{ matrix.node }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['20', '22', '24']
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node.js ${{ matrix.node }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      - name: Run release checks
+        run: node scripts/verify.mjs
+
+      # The live query needs a real API key and network access, so it only runs
+      # when the repository defines the BALANCE_TEST_KEY secret. Secrets cannot
+      # be referenced from a step-level `if`, hence the shell guard.
+      - name: Live balance query
+        env:
+          BALANCE_TEST_KEY: ${{ secrets.BALANCE_TEST_KEY }}
+        run: |
+          if [ -z "${BALANCE_TEST_KEY}" ]; then
+            echo "BALANCE_TEST_KEY is not set; skipping the live query."
+            exit 0
+          fi
+          node scripts/verify.mjs --live
