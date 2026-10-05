@@ -4,7 +4,7 @@
 
 它只为了一件事而写：**在显示花费的同时，不扩大 API Key 的暴露面**。整个插件就是四个小文件，几分钟就能读完。
 
-[English](README.md) | 中文
+[English](README.md) | 中文 | [Русский](README.ru.md) | [Deutsch](README.de.md)
 
 ## 为什么需要它
 
