@@ -38,8 +38,11 @@ The line reads `Balance ¥6.39  ·  Cost ¥0.12`: the account balance and the co
 accumulated since this process started, each labelled so neither figure is
 ambiguous. Both are always present — an unknown value keeps its `--` placeholder
 instead of disappearing, so the row does not shift once the first call is billed.
-Hovering breaks the cost down into calls and token buckets; clicking forces a
-refresh.
+
+Hovering opens a tooltip that **leads with the price table**: every model's rate
+per 1M tokens for both tiers, with the tier in force right now marked, followed by
+the balance, the run cost, and the token breakdown. Leading with the rates means
+the numbers the cost was derived from are read first. Clicking forces a refresh.
 
 ## Cost accounting
 
