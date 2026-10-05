@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-10-01
+
+### Added
+
+- **Price table in the tooltip**: every model's rate per 1M tokens for both the off-peak and the peak tier, in the order cache hit / cache miss / output, with the tier in force right now marked. The table travels with the balance payload, so it needs no second request and reflects any configured price override.
+- **Russian and German copy**, alongside the existing English and Chinese. All four dictionaries are verified to define the same key set, so a missing translation cannot ship.
+- Full `README.ru.md` and `README.de.md` translations.
+
+### Changed
+
+- The active language follows the document's `lang` attribute, which the GUI locale service keeps in sync, and the row re-renders on a language switch without a reload. A browser language outside the four shipped ones falls back to English.
+
 ## [1.1.1] - 2026-10-01
 
 ### Added
@@ -88,7 +100,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `@deepseek-ai/schemastery` is loaded optionally, so the plugin also loads
   outside a DSH install and the release checks run standalone.
 
-[Unreleased]: https://github.com/CH2008445/dsh-api-balance/compare/v1.1.1...HEAD
+[Unreleased]: https://github.com/CH2008445/dsh-api-balance/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/CH2008445/dsh-api-balance/compare/v1.1.1...v1.2.0
 [1.1.1]: https://github.com/CH2008445/dsh-api-balance/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/CH2008445/dsh-api-balance/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/CH2008445/dsh-api-balance/releases/tag/v1.0.0
