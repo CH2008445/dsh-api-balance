@@ -4,7 +4,7 @@
 
 Built for one purpose: showing what you are spending **without widening the blast radius of your API key**. The whole plugin is four small files you can read in a few minutes.
 
-English | [中文](README.zh.md)
+English | [中文](README.zh.md) | [Русский](README.ru.md) | [Deutsch](README.de.md)
 
 ## Why this exists
 
