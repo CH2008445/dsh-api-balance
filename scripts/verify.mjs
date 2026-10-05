@@ -33,7 +33,17 @@ if (pkg.exports?.['./client']?.default !== './lib/client.js') fail('exports["./c
 for (const file of ['lib/index.js', 'lib/client.js', 'lib/pricing.js', 'lib/usage-ledger.js', 'lib/types/index.d.ts', 'cordis.patch.yml', 'LICENSE']) {
   if (!existsSync(join(root, file))) fail('missing release file: ' + file)
 }
-ok('manifest declares the bundle, the web client, and the expected exports')
+// Every shipped language needs a README, cross-linked from each other one.
+const readmes = ['README.md', 'README.zh.md', 'README.ru.md', 'README.de.md']
+for (const file of readmes) {
+  if (!existsSync(join(root, file))) fail('missing README: ' + file)
+  if (!pkg.files.includes(file)) fail(`${file} must be listed in package.json "files"`)
+  const text = readFileSync(join(root, file), 'utf8')
+  for (const other of readmes) {
+    if (other !== file && !text.includes(`(${other})`)) fail(`${file} must link to ${other}`)
+  }
+}
+ok('manifest declares the bundle, the web client, and all four READMEs')
 
 // ── 2. Loader patch ──────────────────────────────────────────────────────────
 
@@ -256,7 +266,23 @@ if (usagePayload.usage === undefined || typeof usagePayload.usage !== 'object') 
 }
 if (usagePayload.usage.total.calls !== 0) fail('a fresh run must report zero calls')
 if (usagePayload.usageCurrency !== 'CNY') fail('usage must be reported in CNY')
-ok('route payload carries a zeroed usage summary before any model call')
+
+// The price table travels with the payload so the UI can show the rates behind
+// the cost without a second request.
+const table = usagePayload.prices
+if (table === undefined || typeof table !== 'object') fail('the route payload must carry a price table')
+if (table.__tier !== 'peak' && table.__tier !== 'offPeak') fail('the price table must state the tier in force')
+if (table.__currency !== 'CNY') fail('the price table must state its currency')
+const flash = table['deepseek-flash']
+if (flash === undefined) fail('the price table must include deepseek-flash')
+if (flash.peak.cacheMiss !== 2 || flash.offPeak.cacheMiss !== 1) {
+  fail('the price table must carry both tiers, got: ' + JSON.stringify(flash))
+}
+if (flash.cacheHit !== 0.02) fail('the price table must carry the cache-hit rate')
+// Off-peak must be exactly half of peak, per the official pricing rule.
+if (flash.peak.cacheHit !== flash.offPeak.cacheHit * 2) fail('the peak tier must be twice the off-peak tier')
+if (served.body.includes(SECRET)) fail('the price table response leaked the API key')
+ok('route payload carries the price table with both tiers and the tier in force')
 
 // Drive one model call through the stream hook the plugin registered.
 const chunks = await (async () => {
@@ -350,6 +376,26 @@ if (slot?.id !== pkg.name) fail('client slot entry id must equal the package nam
 
 // The row loads through fetch and stores the result in React state, so drive it
 // with a stub fetch and a stateful hook stand-in that renders the loaded value.
+const PRICES = {
+  __tier: 'offPeak',
+  __currency: 'CNY',
+  'deepseek-flash': {
+    currency: 'CNY',
+    cacheHit: 0.02,
+    cacheMiss: 1,
+    output: 4,
+    offPeak: { cacheHit: 0.02, cacheMiss: 1, output: 4 },
+    peak: { cacheHit: 0.04, cacheMiss: 2, output: 8 },
+  },
+  'deepseek-v4-pro': {
+    currency: 'CNY',
+    cacheHit: 0.15,
+    cacheMiss: 4.5,
+    output: 13.5,
+    offPeak: { cacheHit: 0.15, cacheMiss: 4.5, output: 13.5 },
+    peak: { cacheHit: 0.3, cacheMiss: 9, output: 27 },
+  },
+}
 const payload = {
   ok: true,
   isAvailable: true,
@@ -363,128 +409,185 @@ const payload = {
     models: {},
     sessions: 1,
   },
+  prices: PRICES,
 }
-const realFetch = globalThis.fetch
-const statefulEffects = []
-let renderedTitle = ''
-let renderedText = ''
-let renderCount = 0
-try {
-  globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => payload })
+
+/**
+ * Render the row once against a stub payload and document language.
+ *
+ * The component loads through fetch and stores the result in React state, so
+ * this supplies a stub fetch plus a stateful hook stand-in and performs the
+ * second render that sees the loaded value.
+ *
+ * @param data - Payload the stub fetch resolves with.
+ * @param lang - Value of `document.documentElement.lang`.
+ * @returns The rendered element and its flattened text.
+ */
+const renderRow = async (data, lang) => {
+  const realFetch = globalThis.fetch
+  const effects = []
   const cells = []
   let hooks = 0
-  // A minimal stateful hook stand-in: the first render returns initial state,
-  // the effect resolves the fetch, and the second render sees the payload.
-  const StatefulReact = {
-    createElement: (type, props, ...children) => ({ type, props, children: children.flat() }),
-    useState: (init) => {
-      const index = hooks++
-      if (cells[index] === undefined) cells[index] = typeof init === 'function' ? init() : init
-      return [cells[index], (next) => { cells[index] = typeof next === 'function' ? next(cells[index]) : next }]
-    },
-    useCallback: (fn) => fn,
-    useEffect: (fn) => { statefulEffects.push(fn) },
-  }
-
-  const statefulBundle = new Function('window', 'setInterval', 'clearInterval', 'document', clientSrc)
-  const statefulWindow = { __ModuleLoader__: { load: (entry) => { captured = entry } } }
-  statefulBundle(statefulWindow, () => 0, () => {}, {
-    hidden: false, addEventListener() {}, removeEventListener() {}, visibilityState: 'visible',
-  })
-  const statefulExports = captured.factory((request) => {
-    if (request === 'react') return StatefulReact
-    throw new Error('unexpected client require: ' + request)
-  })
-  const statefulRegistered = []
-  statefulExports.apply({
-    slots: {
-      inject: (name, callback) => callback(),
-      register: (options, Component) => { statefulRegistered.push(Component); return () => {} },
-    },
-  })
-  const Row = statefulRegistered[0]
-  Row({ wide: true })
-  for (const effect of statefulEffects) effect()
-  await new Promise((resolve) => setTimeout(resolve, 0))
-  hooks = 0
-  renderCount += 1
-  const second = Row({ wide: true })
-  renderedTitle = String(second.props.title)
-  renderedText = second.children.flat().join('')
-} finally {
-  globalThis.fetch = realFetch
-}
-
-if (renderCount !== 1) fail('the row must render a second time after loading')
-if (!renderedTitle.includes('\u00a59.97')) {
-  fail('the tooltip must report the balance, got: ' + JSON.stringify(renderedTitle))
-}
-if (!renderedTitle.includes('This run')) fail('the tooltip must report this run cost, got: ' + JSON.stringify(renderedTitle))
-if (!renderedTitle.includes('\u00a50.12')) fail('the tooltip must report the run cost amount, got: ' + JSON.stringify(renderedTitle))
-if (!renderedTitle.includes('Tokens in')) fail('the tooltip must break down token buckets')
-// Both figures carry a label on the row itself, so neither is ambiguous.
-if (!renderedText.includes('Balance \u00a59.97')) {
-  fail('the row must label the balance, got: ' + JSON.stringify(renderedText))
-}
-if (!renderedText.includes('Cost \u00a50.12')) {
-  fail('the row must label the cost, got: ' + JSON.stringify(renderedText))
-}
-ok('the row shows the labelled balance and cost on one line')
-
-// A run with no billed calls yet must show the balance alone, without a cost.
-{
-  const bare = { ...payload, usage: { total: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, calls: 0, cost: 0 }, models: {}, sessions: 0 } }
-  const realFetch2 = globalThis.fetch
-  const effects2 = []
-  const cells2 = []
-  let hooks2 = 0
+  let capturedClient = null
   try {
-    globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => bare })
-    const React2 = {
+    globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => data })
+    const StubReact = {
       createElement: (type, props, ...children) => ({ type, props, children: children.flat() }),
       useState: (init) => {
-        const index = hooks2++
-        if (cells2[index] === undefined) cells2[index] = typeof init === 'function' ? init() : init
-        return [cells2[index], (next) => { cells2[index] = typeof next === 'function' ? next(cells2[index]) : next }]
+        const index = hooks++
+        if (cells[index] === undefined) cells[index] = typeof init === 'function' ? init() : init
+        return [cells[index], (next) => { cells[index] = typeof next === 'function' ? next(cells[index]) : next }]
       },
       useCallback: (fn) => fn,
-      useEffect: (fn) => { effects2.push(fn) },
+      useEffect: (fn) => { effects.push(fn) },
     }
-    let captured2 = null
-    new Function('window', 'setInterval', 'clearInterval', 'document', clientSrc)(
-      { __ModuleLoader__: { load: (entry) => { captured2 = entry } } }, () => 0, () => {},
-      { hidden: false, addEventListener() {}, removeEventListener() {}, visibilityState: 'visible' },
+    const documentStub = {
+      hidden: false,
+      visibilityState: 'visible',
+      documentElement: { lang },
+      addEventListener() {},
+      removeEventListener() {},
+    }
+    new Function('window', 'setInterval', 'clearInterval', 'document', 'navigator', 'MutationObserver', clientSrc)(
+      { __ModuleLoader__: { load: (entry) => { capturedClient = entry } } },
+      () => 0, () => {}, documentStub, { language: lang }, undefined,
     )
-    const exports2 = captured2.factory((request) => {
-      if (request === 'react') return React2
+    const clientApi = capturedClient.factory((request) => {
+      if (request === 'react') return StubReact
       throw new Error('unexpected client require: ' + request)
     })
-    const registered2 = []
-    exports2.apply({
+    const components = []
+    clientApi.apply({
       slots: {
         inject: (name, callback) => callback(),
-        register: (options, Component) => { registered2.push(Component); return () => {} },
+        register: (options, Component) => { components.push(Component); return () => {} },
       },
     })
-    registered2[0]({ wide: true })
-    for (const effect of effects2) effect()
+    components[0]({ wide: true })
+    for (const effect of effects) effect()
     await new Promise((resolve) => setTimeout(resolve, 0))
-    hooks2 = 0
-    const row2 = registered2[0]({ wide: true })
-    const text2 = row2.children.flat().join('')
-    // An unbilled run keeps its balance and shows the cost placeholder, so the
-    // row does not change width or drop a figure once the first call is billed.
-    if (!text2.includes('Balance \u00a59.97')) {
-      fail('an unbilled run must still show the balance, got: ' + JSON.stringify(text2))
-    }
-    if (!text2.includes('Cost --')) {
-      fail('an unbilled run must keep a cost placeholder, got: ' + JSON.stringify(text2))
+    hooks = 0
+    const wide = components[0]({ wide: true })
+    hooks = 0
+    const narrow = components[0]({ wide: false })
+    return {
+      element: wide,
+      title: String(wide.props.title),
+      text: wide.children.join(''),
+      narrowText: narrow.children.join(''),
     }
   } finally {
-    globalThis.fetch = realFetch2
+    globalThis.fetch = realFetch
   }
 }
-ok('an unbilled run keeps both labels, with the cost placeholder')
+
+const english = await renderRow(payload, 'en')
+if (english.element.type !== 'button') fail('the row must render a button')
+if (!english.title.includes('\u00a59.97')) {
+  fail('the tooltip must report the balance, got: ' + JSON.stringify(english.title))
+}
+if (!english.title.includes('This run')) fail('the tooltip must report this run cost')
+if (!english.title.includes('\u00a50.12')) fail('the tooltip must report the run cost amount')
+if (!english.title.includes('Tokens in')) fail('the tooltip must break down token buckets')
+// Both figures carry a label on the row itself, so neither is ambiguous.
+if (!english.text.includes('Balance \u00a59.97')) {
+  fail('the row must label the balance, got: ' + JSON.stringify(english.text))
+}
+if (!english.text.includes('Cost \u00a50.12')) {
+  fail('the row must label the cost, got: ' + JSON.stringify(english.text))
+}
+if (!english.narrowText.includes('9.97') || !english.narrowText.includes('0.12') || english.narrowText.includes('Balance')) {
+  fail('the collapsed rail must drop the labels, got: ' + JSON.stringify(english.narrowText))
+}
+ok('the row shows the labelled balance and cost, and the rail drops the labels')
+
+// ── 9b. Price table in the tooltip ───────────────────────────────────────────
+
+for (const needle of ['Prices, per 1M tokens', 'deepseek-flash', 'deepseek-v4-pro', 'cache hit', '0.02 / \u00a51 / \u00a54', '0.15 / \u00a54.5 / \u00a513.5']) {
+  if (!english.title.includes(needle)) {
+    fail(`the tooltip must show the price table entry ${JSON.stringify(needle)}, got: ` + JSON.stringify(english.title))
+  }
+}
+if (!english.title.includes('now: off-peak')) fail('the tooltip must mark the tier in force')
+if (!english.title.includes('Beijing time')) fail('the tooltip must explain when peak applies')
+// Both tiers must be listed, so the peak multiplier is visible.
+if (!english.title.includes('\u00a50.04 / \u00a52 / \u00a58')) {
+  fail('the tooltip must list peak rates too, got: ' + JSON.stringify(english.title))
+}
+ok('the tooltip lists per-1M-token prices for both tiers and marks the current one')
+
+// ── 9c. Localization ─────────────────────────────────────────────────────────
+
+const expectations = [
+  ['zh', ['\u4f59\u989d \u00a59.97', '\u8d39\u7528 \u00a50.12'], '\u4ef7\u683c\uff08\u6bcf\u767e\u4e07 tokens\uff09'],
+  ['zh-CN', ['\u4f59\u989d \u00a59.97'], '\u7a7a\u95f2\u65f6\u6bb5'],
+  ['ru', ['\u0411\u0430\u043b\u0430\u043d\u0441 \u00a59.97', '\u0420\u0430\u0441\u0445\u043e\u0434 \u00a50.12'], '\u0426\u0435\u043d\u044b \u0437\u0430 1 \u043c\u043b\u043d \u0442\u043e\u043a\u0435\u043d\u043e\u0432'],
+  ['de', ['Guthaben \u00a59.97', 'Kosten \u00a50.12'], 'Preise pro 1 Mio. Token'],
+  ['de-AT', ['Guthaben \u00a59.97'], 'Nebenzeit'],
+  ['ja', ['Balance \u00a59.97'], 'Prices, per 1M tokens'],
+]
+for (const [lang, needles, priceNeedle] of expectations) {
+  const view = await renderRow(payload, lang)
+  for (const needle of needles) {
+    if (!view.text.includes(needle)) {
+      fail(`language ${lang} must render ${JSON.stringify(needle)}, got: ` + JSON.stringify(view.text))
+    }
+  }
+  if (!view.title.includes(priceNeedle)) {
+    fail(`language ${lang} must translate the price heading, got: ` + JSON.stringify(view.title.split('\n').slice(0, 3)))
+  }
+}
+ok('copy renders in Chinese, Russian, and German, with an English fallback')
+
+// Every language must define every key, so a missing translation cannot surface.
+// The dictionaries are module-private, so they are read from source. Brace
+// matching is used rather than a regex, because a language id also occurs inside
+// value text and key names.
+const extractBlock = (source, startIndex) => {
+  let depth = 0
+  for (let i = startIndex; i < source.length; i++) {
+    if (source[i] === '{') depth++
+    else if (source[i] === '}') {
+      depth--
+      if (depth === 0) return source.slice(startIndex, i + 1)
+    }
+  }
+  return null
+}
+const keySets = {}
+for (const lang of ['en', 'zh', 'ru', 'de']) {
+  const marker = new RegExp(`\\b${lang}:\\s*\\{`, 'u').exec(clientSrc)
+  if (marker === null) fail(`the MESSAGES table must define ${lang}`)
+  const open = clientSrc.indexOf('{', marker.index)
+  const block = extractBlock(clientSrc, open)
+  if (block === null) fail(`the ${lang} dictionary is not brace-balanced`)
+  keySets[lang] = [...block.matchAll(/(?:^|[\s{,])([A-Za-z][A-Za-z0-9]*):/gmu)].map((m) => m[1]).sort()
+}
+const reference = keySets.en.join(',')
+if (keySets.en.length < 15) fail(`the English dictionary looks truncated (${keySets.en.length} keys)`)
+for (const lang of ['zh', 'ru', 'de']) {
+  if (keySets[lang].join(',') !== reference) {
+    const missing = keySets.en.filter((k) => !keySets[lang].includes(k))
+    const extra = keySets[lang].filter((k) => !keySets.en.includes(k))
+    fail(`the ${lang} dictionary must define exactly the English keys (missing: ${missing.join(',') || 'none'}; extra: ${extra.join(',') || 'none'})`)
+  }
+}
+ok(`all four dictionaries define the same ${keySets.en.length} keys`)
+
+// A host that reports no price table must still render the row.
+{
+  const bare = { ...payload, prices: undefined, usage: { total: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, calls: 0, cost: 0 }, models: {}, sessions: 0 } }
+  const view = await renderRow(bare, 'en')
+  if (!view.text.includes('Balance \u00a59.97')) {
+    fail('an unbilled run must still show the balance, got: ' + JSON.stringify(view.text))
+  }
+  if (!view.text.includes('Cost --')) {
+    fail('an unbilled run must keep a cost placeholder, got: ' + JSON.stringify(view.text))
+  }
+  // No prices means no price section, and no crash.
+  if (view.title.includes('Prices, per 1M tokens')) fail('a host without prices must not show a price table')
+}
+ok('an unbilled run keeps both labels, and a host without prices renders normally')
 
 // ── 10. Optional live query ──────────────────────────────────────────────────
 
