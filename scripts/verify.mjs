@@ -503,7 +503,7 @@ ok('the row shows the labelled balance and cost, and the rail drops the labels')
 
 // ── 9b. Price table in the tooltip ───────────────────────────────────────────
 
-for (const needle of ['Prices, per 1M tokens', 'deepseek-flash', 'deepseek-v4-pro', 'cache hit', '0.02 / \u00a51 / \u00a54', '0.15 / \u00a54.5 / \u00a513.5']) {
+for (const needle of ['Prices, per 1M tokens', 'deepseek-flash', 'deepseek-v4-pro', 'cache hit', '0.0200 / \u00a51.00 / \u00a54.00', '0.1500 / \u00a54.50 / \u00a513.50']) {
   if (!english.title.includes(needle)) {
     fail(`the tooltip must show the price table entry ${JSON.stringify(needle)}, got: ` + JSON.stringify(english.title))
   }
@@ -511,10 +511,33 @@ for (const needle of ['Prices, per 1M tokens', 'deepseek-flash', 'deepseek-v4-pr
 if (!english.title.includes('now: off-peak')) fail('the tooltip must mark the tier in force')
 if (!english.title.includes('Beijing time')) fail('the tooltip must explain when peak applies')
 // Both tiers must be listed, so the peak multiplier is visible.
-if (!english.title.includes('\u00a50.04 / \u00a52 / \u00a58')) {
+if (!english.title.includes('\u00a50.0400 / \u00a52.00 / \u00a58.00')) {
   fail('the tooltip must list peak rates too, got: ' + JSON.stringify(english.title))
 }
+// A rate keeps at least two decimals, and a sub-cent rate keeps four, so
+// distinct rates never collapse onto the same string.
+if (!english.title.includes('\u00a50.3000')) fail('a sub-unit rate must keep four decimals')
+if (!english.title.includes('\u00a527.00')) fail('a unit-or-above rate must keep two decimals')
 ok('the tooltip lists per-1M-token prices for both tiers and marks the current one')
+
+// The price table leads the tooltip, so the rates are read before the figures
+// they produced.
+{
+  const priceAt = english.title.indexOf('Prices, per 1M tokens')
+  const balanceAt = english.title.indexOf('Balance \u00a59.97')
+  const costAt = english.title.indexOf('This run')
+  if (priceAt < 0) fail('the tooltip must contain the price table')
+  if (balanceAt < 0) fail('the tooltip must contain the balance line')
+  if (costAt < 0) fail('the tooltip must contain the run cost line')
+  if (!(priceAt < balanceAt && balanceAt < costAt)) {
+    fail(`the tooltip order must be prices, balance, cost; got offsets ${priceAt}/${balanceAt}/${costAt}`)
+  }
+  // The first line of the tooltip is the price heading, not the balance.
+  if (english.title.split('\n')[0].indexOf('Prices') < 0) {
+    fail('the price table must be the first tooltip section, got: ' + JSON.stringify(english.title.split('\n')[0]))
+  }
+}
+ok('the price table leads the tooltip, ahead of the balance and the cost')
 
 // ── 9c. Localization ─────────────────────────────────────────────────────────
 
